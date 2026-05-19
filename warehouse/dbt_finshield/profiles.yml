@@ -1,0 +1,28 @@
+# dbt connection profiles
+# Store this file at ~/.dbt/profiles.yml in production (never commit with real credentials)
+finshield:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('DB_HOST', 'localhost') }}"
+      port: "{{ env_var('DB_PORT', '5432') | int }}"
+      dbname: "{{ env_var('DB_NAME', 'finshield') }}"
+      user: "{{ env_var('DB_USER', 'finshield_user') }}"
+      password: "{{ env_var('DB_PASSWORD') }}"
+      schema: warehouse
+      threads: 4
+      keepalives_idle: 0
+      connect_timeout: 10
+      search_path: "warehouse,staging,features,ml"
+
+    prod:
+      type: postgres
+      host: "{{ env_var('PROD_DB_HOST') }}"
+      port: 5432
+      dbname: finshield
+      user: "{{ env_var('PROD_DB_USER') }}"
+      password: "{{ env_var('PROD_DB_PASSWORD') }}"
+      schema: warehouse
+      threads: 8
+      keepalives_idle: 0

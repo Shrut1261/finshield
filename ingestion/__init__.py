@@ -1,0 +1,1 @@
+"""FinShield data ingestion layer."""

@@ -1,0 +1,94 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "finshield"
+version = "0.1.0"
+description = "Real-Time Financial Fraud Detection & Risk Analytics Platform"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "Shrut Patel"}]
+
+dependencies = [
+    # Data
+    "pandas>=2.1.0",
+    "numpy>=1.26.0",
+    "pyarrow>=15.0.0",
+    "faker>=23.0.0",
+    # Database
+    "sqlalchemy>=2.0.0",
+    "psycopg2-binary>=2.9.9",
+    "alembic>=1.13.0",
+    # dbt
+    "dbt-postgres>=1.7.0",
+    # ML
+    "scikit-learn>=1.4.0",
+    "xgboost>=2.0.0",
+    "imbalanced-learn>=0.11.0",
+    "shap>=0.44.0",
+    "mlflow>=2.10.0",
+    "torch>=2.2.0",
+    # API
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.2.0",
+    "httpx>=0.27.0",
+    # Dashboard
+    "streamlit>=1.31.0",
+    "plotly>=5.19.0",
+    # Observability
+    "structlog>=24.1.0",
+    "prometheus-client>=0.20.0",
+    # Utilities
+    "python-dotenv>=1.0.0",
+    "tenacity>=8.2.3",
+    "rich>=13.7.0",
+    "typer>=0.12.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "black>=24.2.0",
+    "ruff>=0.3.0",
+    "mypy>=1.8.0",
+    "pre-commit>=3.6.0",
+    "locust>=2.24.0",
+    "factory-boy>=3.3.0",
+]
+
+[project.scripts]
+finshield = "scripts.run_pipeline:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["api", "features", "models", "ingestion", "dashboard", "scripts"]
+
+[tool.black]
+line-length = 110
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "PT"]
+ignore = ["S101", "B008", "A002", "N806"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "--cov=. --cov-report=term-missing --cov-report=html --cov-config=pyproject.toml"
+
+[tool.coverage.run]
+omit = ["tests/*", "scripts/*", "notebooks/*", "*.pyi", "*/migrations/*"]

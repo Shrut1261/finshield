@@ -1,0 +1,43 @@
+version: 2
+
+sources:
+  - name: staging
+    schema: staging
+    tables:
+      - name: stg_raw_transactions
+        description: "Raw ingested transactions from all source datasets"
+        columns:
+          - name: transaction_id
+            description: "Unique transaction identifier"
+            tests:
+              - not_null
+          - name: amount
+            tests:
+              - not_null
+          - name: is_fraud
+            tests:
+              - not_null
+              - accepted_values:
+                  values: [0, 1]
+
+models:
+  - name: stg_raw_transactions
+    description: "Cleaned, deduplicated, and typed transaction staging layer"
+    columns:
+      - name: transaction_id
+        tests:
+          - unique
+          - not_null
+      - name: amount
+        tests:
+          - not_null
+      - name: is_fraud
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: source_dataset
+        tests:
+          - not_null
+          - accepted_values:
+              values: [creditcard_ulb, paysim, ieee_cis, synthetic]

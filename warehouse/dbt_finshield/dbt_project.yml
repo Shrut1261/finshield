@@ -1,0 +1,43 @@
+name: 'dbt_finshield'
+version: '1.0.0'
+config-version: 2
+
+profile: 'finshield'
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+analysis-paths: ["analyses"]
+macro-paths: ["macros"]
+
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  start_date: '2013-01-01'
+  fraud_threshold_low: 0.30
+  fraud_threshold_medium: 0.60
+  fraud_threshold_high: 0.85
+
+models:
+  dbt_finshield:
+    staging:
+      +materialized: view
+      +schema: staging
+      +tags: ["staging"]
+    dimensions:
+      +materialized: table
+      +schema: warehouse
+      +tags: ["dimensions"]
+    facts:
+      +materialized: incremental
+      +schema: warehouse
+      +unique_key: transaction_id
+      +on_schema_change: append_new_columns
+      +tags: ["facts"]
+    marts:
+      +materialized: table
+      +schema: warehouse
+      +tags: ["marts", "dashboard"]
+      +post-hook:
+        - "ANALYZE {{ this }}"

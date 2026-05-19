@@ -1,0 +1,54 @@
+# GitHub Actions CD — copy to .github/workflows/finshield-deploy.yml to activate
+name: FinShield Deploy to Azure
+
+on:
+  push:
+    branches: [main]
+    paths: ["finshield/**"]
+
+defaults:
+  run:
+    working-directory: finshield
+
+jobs:
+  deploy:
+    name: Deploy to Azure Container Apps
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Log in to ACR
+        uses: azure/docker-login@v2
+        with:
+          login-server: ${{ secrets.AZURE_REGISTRY }}.azurecr.io
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push images
+        run: |
+          TAG=${{ github.sha }}
+          REG=${{ secrets.AZURE_REGISTRY }}.azurecr.io
+          docker build -f Dockerfile.api       -t $REG/finshield-api:$TAG .
+          docker build -f Dockerfile.streamlit -t $REG/finshield-dashboard:$TAG .
+          docker push $REG/finshield-api:$TAG
+          docker push $REG/finshield-dashboard:$TAG
+
+      - name: Deploy API
+        uses: azure/container-apps-deploy-action@v1
+        with:
+          resourceGroup: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          containerAppName: finshield-api
+          imageToDeploy: ${{ secrets.AZURE_REGISTRY }}.azurecr.io/finshield-api:${{ github.sha }}
+
+      - name: Deploy Dashboard
+        uses: azure/container-apps-deploy-action@v1
+        with:
+          resourceGroup: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          containerAppName: finshield-dashboard
+          imageToDeploy: ${{ secrets.AZURE_REGISTRY }}.azurecr.io/finshield-dashboard:${{ github.sha }}

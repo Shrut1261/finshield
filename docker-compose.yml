@@ -1,0 +1,83 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: finshield_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: finshield
+      POSTGRES_USER: finshield_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-finshield_dev_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finshield_user -d finshield"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.10.0
+    container_name: finshield_mlflow
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri postgresql://finshield_user:${DB_PASSWORD:-finshield_dev_password}@postgres:5432/finshield
+      --default-artifact-root /mlflow/artifacts
+    volumes:
+      - mlflow_artifacts:/mlflow/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: finshield_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      - DB_HOST=postgres
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    container_name: finshield_dashboard
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    env_file: .env
+    environment:
+      - DB_HOST=postgres
+      - API_BASE_URL=http://api:8000
+    depends_on:
+      - postgres
+      - api
+
+volumes:
+  postgres_data:
+  mlflow_artifacts:
+
+networks:
+  default:
+    name: finshield_network

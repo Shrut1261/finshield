@@ -76,7 +76,7 @@ class ScoreResponse(BaseModel):
     fraud_probability: float = Field(..., ge=0.0, le=1.0)
     risk_tier: RiskTier = RiskTier.LOW
     decision: DecisionCode = DecisionCode.AUTO_APPROVE
-    shap_top_features: list[dict[str, float]] = Field(default_factory=list)
+    shap_top_features: list[dict[str, str | float]] = Field(default_factory=list)
     model_version: str = "unknown"
     latency_ms: float = 0.0
     scored_at: datetime = Field(default_factory=datetime.utcnow)

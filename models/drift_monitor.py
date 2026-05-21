@@ -91,7 +91,11 @@ class DriftMonitor:
         if not rows:
             raise RuntimeError("No baseline data available for drift monitoring.")
 
-        records = [r.features if isinstance(r.features, dict) else r.features for r in rows]
+        import json
+        records = [
+            r.features if isinstance(r.features, dict) else json.loads(r.features)
+            for r in rows
+        ]
         return pd.DataFrame(records)
 
     def _load_recent(self, weeks_back: int = 1) -> pd.DataFrame:
@@ -108,7 +112,11 @@ class DriftMonitor:
             logger.warning("No recent feature vectors found after %s", cutoff)
             return pd.DataFrame()
 
-        records = [r.features if isinstance(r.features, dict) else r.features for r in rows]
+        import json
+        records = [
+            r.features if isinstance(r.features, dict) else json.loads(r.features)
+            for r in rows
+        ]
         return pd.DataFrame(records)
 
     def compute_and_persist(self, week_start: Optional[date] = None) -> pd.DataFrame:

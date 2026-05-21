@@ -22,7 +22,7 @@ __all__ = [
     "MetricsResponse",
 ]
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from pydantic import BaseModel, Field
 
@@ -45,7 +45,7 @@ class HealthResponse(BaseModel):
     model_loaded: bool
     db_connected: bool
     uptime_seconds: float
-    checked_at: datetime = Field(default_factory=datetime.utcnow)
+    checked_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class MetricsResponse(BaseModel):

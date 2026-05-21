@@ -1,7 +1,7 @@
 """Pydantic schemas for transaction ingestion and API validation."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
@@ -51,7 +51,7 @@ class TransactionInput(BaseModel):
     is_weekend: bool = Field(default=False)
     device_id: Optional[str] = None
     ip_address: Optional[str] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @field_validator("amount")
     @classmethod
@@ -79,7 +79,7 @@ class ScoreResponse(BaseModel):
     shap_top_features: list[dict[str, str | float]] = Field(default_factory=list)
     model_version: str = "unknown"
     latency_ms: float = 0.0
-    scored_at: datetime = Field(default_factory=datetime.utcnow)
+    scored_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @model_validator(mode="after")
     def assign_risk_and_decision(self) -> "ScoreResponse":

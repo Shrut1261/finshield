@@ -14,7 +14,14 @@ from sqlalchemy import Engine, text
 
 logger = logging.getLogger(__name__)
 
-# Window durations in seconds
+# Pandas offset aliases for time-based rolling
+_WINDOW_OFFSETS: dict[str, str] = {
+    "1h": "1h",
+    "24h": "24h",
+    "7d": "7D",
+}
+
+# Window durations in seconds (kept for SQL function and unique-count fallback)
 WINDOWS: dict[str, int] = {
     "1h": 3_600,
     "24h": 86_400,
@@ -33,46 +40,59 @@ def compute_velocity_features(df: pd.DataFrame) -> pd.DataFrame:
             amount, timestamp]. Must be sorted by timestamp ascending.
 
     Returns:
-        Input DataFrame with 18 additional velocity feature columns appended.
+        Input DataFrame with 22 additional velocity feature columns appended.
     """
     df = df.copy()
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     df = df.sort_values("timestamp").reset_index(drop=True)
 
+    # ── Rolling count / sum / mean via pandas groupby-rolling (O(n log n)) ──────
+    # closed="left" gives the half-open window [t - W, t), excluding the current tx.
+    # We process each entity×window pair by iterating over groups so that we can
+    # map results back to the original integer index without timestamp-collision risk.
     for entity_col in ("customer_id", "card_id"):
-        for window_label, seconds in WINDOWS.items():
+        for window_label, window_offset in _WINDOW_OFFSETS.items():
             col_prefix = f"{entity_col}_{window_label}"
-            counts, sums, means = [], [], []
+            counts = np.zeros(len(df), dtype=np.float32)
+            sums = np.zeros(len(df), dtype=np.float64)
+            means = np.zeros(len(df), dtype=np.float64)
 
-            for _, row in df.iterrows():
-                cutoff = row["timestamp"] - pd.Timedelta(seconds=seconds)
-                mask = (
-                    (df[entity_col] == row[entity_col])
-                    & (df["timestamp"] >= cutoff)
-                    & (df["timestamp"] < row["timestamp"])
-                )
-                window_amounts = df.loc[mask, "amount"]
-                counts.append(len(window_amounts))
-                sums.append(float(window_amounts.sum()))
-                means.append(float(window_amounts.mean()) if len(window_amounts) > 0 else 0.0)
+            for _, group in df.groupby(entity_col, sort=False):
+                # group rows are in timestamp-ascending order (df is pre-sorted)
+                g = group.set_index("timestamp")["amount"]
+                rolling = g.rolling(window_offset, closed="left")
+                orig = group.index.values  # positions in df
+                counts[orig] = rolling.count().values
+                sums[orig] = rolling.sum().values
+                means[orig] = rolling.mean().fillna(0.0).values
 
-            df[f"tx_count_{col_prefix}"] = counts
+            df[f"tx_count_{col_prefix}"] = counts.astype(int)
             df[f"tx_sum_{col_prefix}"] = np.round(sums, 2)
             df[f"tx_mean_{col_prefix}"] = np.round(means, 2)
 
-    # Unique merchants and countries per customer in 24h / 7d
+    # ── Unique merchants / countries (numpy-vectorized per entity group) ─────────
+    # O(k²) per customer where k = txns per customer — fast in practice (k << N).
+    has_merchant = "merchant_id" in df.columns
+    has_country = "country" in df.columns
+
     for window_label, seconds in [("24h", 86_400), ("7d", 604_800)]:
-        uniq_merchants, uniq_countries = [], []
-        for _, row in df.iterrows():
-            cutoff = row["timestamp"] - pd.Timedelta(seconds=seconds)
-            mask = (
-                (df["customer_id"] == row["customer_id"])
-                & (df["timestamp"] >= cutoff)
-                & (df["timestamp"] < row["timestamp"])
-            )
-            window = df.loc[mask]
-            uniq_merchants.append(window["merchant_id"].nunique() if "merchant_id" in df.columns else 0)
-            uniq_countries.append(window["country"].nunique() if "country" in df.columns else 0)
+        ns = np.int64(seconds) * 1_000_000_000  # nanoseconds
+        uniq_merchants = np.zeros(len(df), dtype=np.int32)
+        uniq_countries = np.zeros(len(df), dtype=np.int32)
+
+        for _, group in df.groupby("customer_id", sort=False):
+            ts = group["timestamp"].values.astype("int64")
+            orig = group.index.values
+            merchant_vals = group["merchant_id"].values if has_merchant else None
+            country_vals = group["country"].values if has_country else None
+
+            for i in range(len(group)):
+                in_win = (ts >= ts[i] - ns) & (ts < ts[i])
+                if merchant_vals is not None:
+                    uniq_merchants[orig[i]] = int(np.unique(merchant_vals[in_win]).size)
+                if country_vals is not None:
+                    uniq_countries[orig[i]] = int(np.unique(country_vals[in_win]).size)
+
         df[f"unique_merchants_{window_label}"] = uniq_merchants
         df[f"unique_countries_{window_label}"] = uniq_countries
 

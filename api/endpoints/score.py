@@ -1,10 +1,12 @@
 """POST /score — real-time fraud scoring endpoint."""
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import pandas as pd
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from api.middleware import record_scoring_latency
 from api.schemas import BatchScoreRequest, BatchScoreResponse, ScoreResponse, TransactionInput
@@ -12,16 +14,12 @@ from api.schemas import BatchScoreRequest, BatchScoreResponse, ScoreResponse, Tr
 router = APIRouter(prefix="/score", tags=["scoring"])
 
 
-def get_model():
-    """Dependency: returns the loaded model from app state."""
-    from api.main import app
-    return app.state.model
+def get_model(request: Request) -> object:
+    return request.app.state.model
 
 
-def get_model_version():
-    """Dependency: returns model version string from app state."""
-    from api.main import app
-    return getattr(app.state, "model_version", "unknown")
+def get_model_version(request: Request) -> str:
+    return getattr(request.app.state, "model_version", "unknown")
 
 
 @router.post(
@@ -46,15 +44,22 @@ async def score_transaction(
         )
 
     start = time.perf_counter()
+    loop = asyncio.get_event_loop()
 
     try:
-        import pandas as pd
         row = pd.DataFrame([transaction.model_dump()])
-        fraud_probability = float(model.predict_proba(row)[0])  # type: ignore[union-attr]
+
+        # Run synchronous sklearn/XGBoost inference in a thread pool so the
+        # event loop is not blocked during CPU-bound scoring.
+        fraud_probability = await loop.run_in_executor(
+            None, lambda: float(model.predict_proba(row)[0])  # type: ignore[union-attr]
+        )
 
         shap_features: list[dict] = []
         if hasattr(model, "explain"):
-            explanations = model.explain(row, top_n=5)
+            explanations: list[list[dict]] = await loop.run_in_executor(
+                None, lambda: model.explain(row, top_n=5)  # type: ignore[union-attr]
+            )
             if explanations:
                 shap_features = explanations[0]
 
@@ -92,16 +97,21 @@ async def score_batch(
         raise HTTPException(status_code=503, detail="Model not loaded.")
 
     start = time.perf_counter()
-    results: list[ScoreResponse] = []
+    loop = asyncio.get_event_loop()
 
-    import pandas as pd
     rows = pd.DataFrame([t.model_dump() for t in request.transactions])
-    probas = model.predict_proba(rows).tolist()  # type: ignore[union-attr]
+
+    probas: list[float] = await loop.run_in_executor(
+        None, lambda: model.predict_proba(rows).tolist()  # type: ignore[union-attr]
+    )
 
     explanations: list[list[dict]] = []
     if hasattr(model, "explain"):
-        explanations = model.explain(rows, top_n=5)
+        explanations = await loop.run_in_executor(
+            None, lambda: model.explain(rows, top_n=5)  # type: ignore[union-attr]
+        )
 
+    results: list[ScoreResponse] = []
     for i, (tx, prob) in enumerate(zip(request.transactions, probas)):
         resp = ScoreResponse(
             transaction_id=tx.transaction_id,
